@@ -10,6 +10,7 @@ import shutil
 import time
 import plistlib
 from pathlib import Path
+from threading import Timer
 
 import asyncio
 import click
@@ -106,8 +107,12 @@ def main_callback(service_provider: LockdownClient, dvt: DvtSecureSocketProxySer
         click.secho(f"Killing itunesstored pid {pid_itunesstored}...", fg="yellow")
         pc.kill(pid_itunesstored)
     
-    # Now that we wait for user to response
-    input("Press Enter once you see the alert \"Unable to download\"")
+    # Wait for itunesstored to finish download and raise an error
+    click.secho("Waiting for itunesstored to finish download...", fg="yellow")
+    for syslog_entry in OsTraceService(lockdown=service_provider).syslog():
+        if (posixpath.basename(syslog_entry.filename) == 'itunesstored') and \
+            "Install complete for download: 6936249076851270152 result: Failed" in syslog_entry.message:
+            break
     
     # Kill bookassetd and Books processes to trigger MobileGestalt overwrite
     pid_bookassetd = next((pid for pid, p in procs.items() if p['ProcessName'] == 'bookassetd'), None)
@@ -126,7 +131,15 @@ def main_callback(service_provider: LockdownClient, dvt: DvtSecureSocketProxySer
         click.secho(f"Error launching Books app: {e}", fg="red")
         return
     
-    click.secho("Done. If it doesn't take effect wait a bit and try again.", fg="green")
+    click.secho("If this takes more than a minute please try again.", fg="yellow")
+    click.secho("Waiting for MobileGestalt overwrite to complete...", fg="yellow")
+    success_message = "/private/var/containers/Shared/SystemGroup/systemgroup.com.apple.mobilegestaltcache/Library/Caches/com.apple.MobileGestalt.plist) [Install-Mgr]: Marking download as [finished]"
+    for syslog_entry in OsTraceService(lockdown=service_provider).syslog():
+        if (posixpath.basename(syslog_entry.filename) == 'bookassetd') and \
+                success_message in syslog_entry.message:
+            break
+    click.secho("Done!", fg="green")
+    sys.exit(0)
 
 def _run_async_rsd_connection(address, port):
     async def async_connection():
@@ -193,6 +206,7 @@ async def connection_context(udid):# Create a LockdownClient instance
         device_product_type = service_provider.get_value(key="ProductType")
         device_version = parse_version(service_provider.product_version)
         click.secho(f"Got device: {marketing_name} (iOS {device_version}, Build {device_build})", fg="blue")
+        click.secho("Please keep your device unlocked during the process.", fg="blue")
         
         # Validate MobileGestalt file
         mg_contents = plistlib.load(open(mg_file, "rb"))
