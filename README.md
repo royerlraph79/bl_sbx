@@ -22,3 +22,66 @@ iOS fails to block crafted download tasks, allowing unauthorized file writes unl
 This project is for **educational purposes only**.  
 Do **not** use it for illegal activities.  
 Apple may patch this behavior at any time.
+
+
+# 📖 Usage Instructions
+
+> ⚠️ **IMPORTANT:** Run this tool with **Administrator (Windows)** or
+> privileges.\
+> The exploit requires creating a secure USB/Network tunnel, which the
+> OS blocks without elevated rights.
+
+------------------------------------------------------------------------
+
+## 🔧 Step 1: Preparation
+
+-   Connect your **iPhone** to your PC via **USB**\
+    *(Tap "Trust" on your iPhone if prompted)*\
+-   Ensure you have your **modded `com.apple.MobileGestalt.plist`**\
+    *(must match your exact device model)*
+
+------------------------------------------------------------------------
+
+## 🚀 Step 2: Launch the Tool
+
+Open **Command Prompt (CMD)** or **PowerShell** as Administrator,
+navigate to the tool folder, then run:
+
+``` bash
+python launcher.py
+```
+
+------------------------------------------------------------------------
+
+## 🛠 Step 3: Configure
+
+-   **UDID** → The tool should auto-detect.
+    -   If it doesn't, click **SCAN ↻**.
+-   **Local Plist** → Click **BROWSE** and select your modded `.plist`.
+-   **Target Path** → Click **AUTO FILL** (yellow button).
+    -   The correct `/private/var/...` path will be inserted
+        automatically.
+-   Click **RUN EXPLOIT** (red button).
+
+------------------------------------------------------------------------
+
+## 📲 Step 4: Trigger the Exploit
+
+Watch the **SYSTEM LOG**.
+
+When you see:
+
+> **Please open Books app and download a book to continue.**
+
+Do the following:
+
+1.  Unlock your iPhone\
+2.  Open the **Books** app\
+3.  Download **any** book
+
+Then wait until the tool reports:
+
+> ✅ **SUCCESS**
+
+Your device will automatically **respring/reboot**.
+>It is recommended to **reboot using 3uTools**.
