@@ -17,6 +17,8 @@ import plistlib
 from pathlib import Path
 from threading import Timer
 from http.server import HTTPServer, SimpleHTTPRequestHandler
+import sys
+import time
 
 import asyncio
 import click
@@ -229,7 +231,12 @@ def exit_func(tunnel_proc):
 
 async def create_tunnel(udid):
     # TODO: check for Windows
-    tunnel_process = subprocess.Popen(f"sudo /home/pengubow/venv/bin/python3 -m pymobiledevice3 lockdown start-tunnel --script-mode --udid {udid}", shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    tunnel_process = subprocess.Popen(
+    [sys.executable, "-m", "pymobiledevice3", "lockdown", "start-tunnel", "--script-mode", "--udid", udid],
+    shell=True,
+    stdout=subprocess.PIPE,
+    stderr=subprocess.PIPE
+    )
     atexit.register(exit_func, tunnel_process)
     while True:
         output = tunnel_process.stdout.readline()
@@ -256,6 +263,7 @@ async def create_tunnel(udid):
             break
     rsd_str = str(rsd_val)
     print("Sucessfully created tunnel: " + rsd_str)
+    time.sleep(5)
     return {"address": rsd_str.split(" ")[0], "port": int(rsd_str.split(" ")[1])}
 
 async def connection_context(udid):# Create a LockdownClient instance
