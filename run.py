@@ -137,8 +137,8 @@ def main_callback(service_provider: LockdownClient, dvt: DvtSecureSocketProxySer
     pid_bookassetd = next((pid for pid, p in procs.items() if p['ProcessName'] == 'bookassetd'), None)
     pid_books = next((pid for pid, p in procs.items() if p['ProcessName'] == 'Books'), None)
     if pid_bookassetd:
-        click.secho(f"Killing bookassetd pid {pid_bookassetd}...", fg="yellow")
-        pc.kill(pid_bookassetd)
+        click.secho(f"Stopping bookassetd pid {pid_bookassetd}...", fg="yellow")
+        pc.signal(pid_bookassetd, 19)
     if pid_books:
         click.secho(f"Killing Books pid {pid_books}...", fg="yellow")
         pc.kill(pid_books)
@@ -146,11 +146,6 @@ def main_callback(service_provider: LockdownClient, dvt: DvtSecureSocketProxySer
     # Upload the file
     click.secho("Uploading " + os.path.basename(overridefile), fg="yellow")
     AfcService(lockdown=service_provider).push(overridefile, "Downloads/" + os.path.basename(path))
-    
-    procs = OsTraceService(lockdown=service_provider).get_pid_list().get("Payload")
-    pid_itunesstored = next((pid for pid, p in procs.items() if p['ProcessName'] == 'itunesstored'), None)
-    if pid_itunesstored:
-        pc.kill(pid_itunesstored)
 
     # Upload downloads.28.sqlitedb
     click.secho("Uploading downloads.28.sqlitedb", fg="yellow")
@@ -167,10 +162,6 @@ def main_callback(service_provider: LockdownClient, dvt: DvtSecureSocketProxySer
     
     # Wait for itunesstored to finish download and raise an error
     click.secho("Waiting for itunesstored to finish download...", fg="yellow")
-    procs = OsTraceService(lockdown=service_provider).get_pid_list().get("Payload")
-    pid_itunesstored = next((pid for pid, p in procs.items() if p['ProcessName'] == 'itunesstored'), None)
-    if pid_itunesstored:
-        pc.kill(pid_itunesstored)
     for syslog_entry in OsTraceService(lockdown=service_provider).syslog():
         if "Install complete for download: 6936249076851270150 result: Failed" in syslog_entry.message:
             click.secho("download complete!", fg="bright_black")
