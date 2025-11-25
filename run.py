@@ -55,7 +55,7 @@ def main_callback(service_provider: LockdownClient, dvt: DvtSecureSocketProxySer
     http_thread = threading.Thread(target=start_http_server, daemon=True)
     http_thread.start()
     ip, port = info_queue.get()
-    print(f"Hosting temporary http server on: http://{ip}:{port}/")
+    click.secho(f"Hosting temporary http server on: http://{ip}:{port}/", fg="bright_black")
 
     afc = AfcService(lockdown=service_provider)
     pc = ProcessControl(dvt)
@@ -81,7 +81,7 @@ def main_callback(service_provider: LockdownClient, dvt: DvtSecureSocketProxySer
                 f.write(uuid)
             break
     else:
-        print("Saved bookassetd container UUID: " + uuid)
+        click.secho("Saved bookassetd container UUID: " + uuid, fg="green")
     
     
     # Modify BLDatabaseManager.sqlite
@@ -146,13 +146,12 @@ def main_callback(service_provider: LockdownClient, dvt: DvtSecureSocketProxySer
     # Upload the file
     click.secho("Uploading " + os.path.basename(overridefile), fg="yellow")
     AfcService(lockdown=service_provider).push(overridefile, "Downloads/" + os.path.basename(path))
-    
+
     # Upload downloads.28.sqlitedb
     click.secho("Uploading downloads.28.sqlitedb", fg="yellow")
     afc.push("tmp.downloads.28.sqlitedb", "Downloads/downloads.28.sqlitedb")
     afc.push("tmp.downloads.28.sqlitedb-shm", "Downloads/downloads.28.sqlitedb-shm")
     afc.push("tmp.downloads.28.sqlitedb-wal", "Downloads/downloads.28.sqlitedb-wal")
-    conn.close()
     
     # Kill itunesstored to trigger BLDataBaseManager.sqlite overwrite
     procs = OsTraceService(lockdown=service_provider).get_pid_list().get("Payload")
@@ -164,8 +163,8 @@ def main_callback(service_provider: LockdownClient, dvt: DvtSecureSocketProxySer
     # Wait for itunesstored to finish download and raise an error
     click.secho("Waiting for itunesstored to finish download...", fg="yellow")
     for syslog_entry in OsTraceService(lockdown=service_provider).syslog():
-        if (posixpath.basename(syslog_entry.filename) == 'itunesstored') and \
-            "Install complete for download: 6936249076851270152 result: Failed" in syslog_entry.message:
+        if "Install complete for download: 6936249076851270150 result: Failed" in syslog_entry.message:
+            click.secho("download complete!", fg="bright_black")
             break
     
     # Kill bookassetd and Books processes to trigger file overwrite
@@ -193,43 +192,52 @@ def main_callback(service_provider: LockdownClient, dvt: DvtSecureSocketProxySer
                 success_message in syslog_entry.message:
             break
     pc.kill(pid_bookassetd)
-    blconn.close()
-    click.secho("Respringing", fg="green")
+    click.secho("Overwrite successful! Respringing...", fg="green")
     procs = OsTraceService(lockdown=service_provider).get_pid_list().get("Payload")
     pid = next((pid for pid, p in procs.items() if p['ProcessName'] == 'backboardd'), None)
     pc.kill(pid)
     click.secho("Done!", fg="green")
+
+    blconn.close()
+    conn.close()
     
     sys.exit(0)
 
-def _run_async_rsd_connection(address, port):
-    async def async_connection():
-        async with RemoteServiceDiscoveryService((address, port)) as rsd:
-            loop = asyncio.get_running_loop()
-
-            def run_blocking_callback():
-                with DvtSecureSocketProxyService(rsd) as dvt:
-                    main_callback(rsd, dvt)
-
-            await loop.run_in_executor(None, run_blocking_callback)
-
+async def _run_async_rsd_connection(address, port):
     try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            with concurrent.futures.ThreadPoolExecutor() as executor:
-                future = executor.submit(asyncio.run, async_connection())
-                future.result()
-        else:
-            loop.run_until_complete(async_connection())
-    except RuntimeError:
-        asyncio.run(async_connection())
+        async def async_connection():
+            async with RemoteServiceDiscoveryService((address, port)) as rsd:
+                click.secho("connected to tunnel", fg="green")
+                loop = asyncio.get_running_loop()
+                    
+                def run_blocking_callback():
+                    with DvtSecureSocketProxyService(rsd) as dvt:
+                        main_callback(rsd, dvt)
+                    
+                await loop.run_in_executor(None, run_blocking_callback)
+
+        click.secho(f"attempt connection", fg="bright_black")
+        await async_connection()
+
+        return
+
+    except (ConnectionRefusedError, OSError) as e:
+        click.secho(f"tunnel connect failed: {e}", fg="red")
+        raise
 
 def exit_func(tunnel_proc):
     tunnel_proc.terminate()
 
 async def create_tunnel(udid):
-    # TODO: check for Windows
-    tunnel_process = subprocess.Popen(f"sudo /home/pengubow/venv/bin/python3 -m pymobiledevice3 lockdown start-tunnel --script-mode --udid {udid}", shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    command = [
+        sys.executable,
+        "-m", "pymobiledevice3",
+        "lockdown", "start-tunnel",
+        "--script-mode",
+        "--udid", udid
+    ]
+    tunnel_process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
     atexit.register(exit_func, tunnel_process)
     while True:
         output = tunnel_process.stdout.readline()
@@ -255,12 +263,15 @@ async def create_tunnel(udid):
                 sys.exit()
             break
     rsd_str = str(rsd_val)
-    print("Sucessfully created tunnel: " + rsd_str)
+    click.secho("Sucessfully created tunnel: " + rsd_str, fg="green")
+    click.secho(f"address: {rsd_str.split(" ")[0]}", fg="bright_black")
+    port = int(rsd_str.split(" ")[1])
+    click.secho(f"port: {port}", fg="bright_black")
+    time.sleep(2)
     return {"address": rsd_str.split(" ")[0], "port": int(rsd_str.split(" ")[1])}
 
-async def connection_context(udid):# Create a LockdownClient instance
+async def connection_context(service_provider):# Create a LockdownClient instance
     try:
-        service_provider = create_using_usbmux(serial=udid)
         marketing_name = service_provider.get_value(key="MarketingName")
         marketing_name = service_provider.get_value(key="MarketingName")
         device_build = service_provider.get_value(key="BuildVersion")
@@ -285,9 +296,9 @@ async def connection_context(udid):# Create a LockdownClient instance
                 # return
         
         if device_version >= parse_version('17.0'):
-            available_address = await create_tunnel(udid)
+            available_address = await create_tunnel(service_provider.udid)
             if available_address:
-                _run_async_rsd_connection(available_address["address"], available_address["port"])
+                await _run_async_rsd_connection(available_address["address"], available_address["port"])
             else:
                 raise Exception("An error occurred getting tunnels addresses...")
         else:
@@ -302,12 +313,13 @@ async def connection_context(udid):# Create a LockdownClient instance
         raise Exception(f"Connection not established... {e}")
 
 if __name__ == "__main__":
-    if len(sys.argv) != 4:
-        print("Usage: python run.py <udid> /path/to/file (ex. ./MobileGestalt/com.apple.MobileGestalt.plist) /path/to/file_on_iOS (like /private/var/containers/Shared/SystemGroup/systemgroup.com.apple.mobilegestaltcache/Library/Caches/com.apple.MobileGestalt.plist)")
+    if len(sys.argv) != 3:
+        print("Usage: python run.py /path/to/local/file (ex. ./MobileGestalt/com.apple.MobileGestalt.plist) /path/to/file_on_iOS (like /private/var/containers/Shared/SystemGroup/systemgroup.com.apple.mobilegestaltcache/Library/Caches/com.apple.MobileGestalt.plist)")
         exit(1)
     
-    overridefile = sys.argv[2]
-    path = sys.argv[3]
+    lockdown = create_using_usbmux()
+    overridefile = sys.argv[1]
+    path = sys.argv[2]
     info_queue = queue.Queue()
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
-    asyncio.run(connection_context(sys.argv[1]))
+    asyncio.run(connection_context(lockdown))
