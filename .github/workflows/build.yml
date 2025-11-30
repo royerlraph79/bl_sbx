@@ -1,15 +1,16 @@
 name: Build macOS ARM Executable
 
 on:
+  workflow_dispatch:      # enables manual "Run workflow" button
   push:
     branches: [ "main" ]
-    tags: [ "v*" ]   # Build and create releases on version tags
+    tags: [ "v*" ]
   pull_request:
     branches: [ "main" ]
 
 jobs:
   build:
-    runs-on: macos-14   # Apple Silicon ARM64 runner
+    runs-on: macos-14
 
     steps:
       - name: Checkout repository
