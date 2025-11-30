@@ -1,16 +1,19 @@
 name: Build macOS ARM Executable
 
 on:
-  workflow_dispatch:      # enables manual "Run workflow" button
+  workflow_dispatch:
   push:
     branches: [ "main" ]
-    tags: [ "v*" ]
   pull_request:
     branches: [ "main" ]
 
 jobs:
   build:
     runs-on: macos-14
+
+    outputs:
+      artifact_path: ${{ steps.prepare.outputs.artifact_path }}
+      version: ${{ steps.version.outputs.version }}
 
     steps:
       - name: Checkout repository
@@ -31,10 +34,18 @@ jobs:
         run: |
           pyinstaller --onefile run.py
 
+      - name: Generate version string
+        id: version
+        run: |
+          VERSION="v$(date +'%Y.%m.%d-%H%M%S')"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
       - name: Prepare artifact
+        id: prepare
         run: |
           mkdir -p build_artifact
           cp dist/run build_artifact/run
+          echo "artifact_path=build_artifact/run" >> $GITHUB_OUTPUT
 
       - name: Upload CI Artifact
         uses: actions/upload-artifact@v4
@@ -43,12 +54,11 @@ jobs:
           path: build_artifact/
 
   release:
-    if: startsWith(github.ref, 'refs/tags/')
     needs: build
     runs-on: macos-14
 
     steps:
-      - name: Download build artifact
+      - name: Download artifact
         uses: actions/download-artifact@v4
         with:
           name: bl_sbx-macos-arm64
@@ -57,6 +67,8 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ needs.build.outputs.version }}
+          name: Release ${{ needs.build.outputs.version }}
           files: run
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
