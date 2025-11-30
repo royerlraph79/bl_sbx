@@ -1,0 +1,61 @@
+name: Build macOS ARM Executable
+
+on:
+  push:
+    branches: [ "main" ]
+    tags: [ "v*" ]   # Build and create releases on version tags
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: macos-14   # Apple Silicon ARM64 runner
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install pyinstaller
+
+      - name: Build executable (ARM64)
+        run: |
+          pyinstaller --onefile run.py
+
+      - name: Prepare artifact
+        run: |
+          mkdir -p build_artifact
+          cp dist/run build_artifact/run
+
+      - name: Upload CI Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bl_sbx-macos-arm64
+          path: build_artifact/
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: macos-14
+
+    steps:
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: bl_sbx-macos-arm64
+          path: .
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: run
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
