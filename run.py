@@ -40,87 +40,6 @@ START_DISCLOSURE_PATH = "/var/mobile/Library/CallServices/Greetings/default/Star
 GLOBAL_TIMEOUT_SECONDS = 500 #lol, forgot to change it
 
 
-def get_uuid_from_tracev2_after_reboot(service_provider: LockdownClient):
-    """Get UUID from tracev2 logs after device has been rebooted"""
-    click.secho("Monitoring tracev2 logs for bookassetd container UUID...", fg="yellow")
-    try:
-        for syslog_entry in OsTraceService(lockdown=service_provider).syslog():
-            if posixpath.basename(syslog_entry.filename) == 'bookassetd':
-                message = syslog_entry.message
-                if "/var/containers/Shared/SystemGroup/" in message:
-                    try:
-                        uuid = message.split("/var/containers/Shared/SystemGroup/")[1].split("/")[0]
-                        if len(uuid) >= 10:
-                            click.secho(f"Found bookassetd container UUID: {uuid}", fg="green")
-                            with open("uuid.txt", "w") as f:
-                                f.write(uuid)
-                            return uuid
-                    except (IndexError, AttributeError):
-                        continue
-                if "/Documents/BLDownloads/" in message:
-                    try:
-                        uuid = message.split("/var/containers/Shared/SystemGroup/")[1] \
-                            .split("/Documents/BLDownloads")[0]
-                        if len(uuid) >= 10:
-                            click.secho(f"Found bookassetd container UUID: {uuid}", fg="green")
-                            with open("uuid.txt", "w") as f:
-                                f.write(uuid)
-                            return uuid
-                    except (IndexError, AttributeError):
-                        continue
-    except Exception as e:
-        click.secho(f"Error reading tracev2 logs: {e}", fg="red")
-        return None
-
-    click.secho("Could not find UUID in tracev2 logs", fg="red")
-    return None
-
-
-def reboot_and_get_uuid(service_provider: LockdownClient, udid: str):
-    """Reboot device and get UUID from tracev2 logs automatically"""
-    uuid = open("uuid.txt", "r").read().strip() if Path("uuid.txt").exists() else ""
-    if len(uuid) >= 10:
-        click.secho(f"Using saved bookassetd container UUID: {uuid}", fg="green")
-        return uuid, service_provider
-
-    click.secho("UUID not found. Rebooting device to get UUID from tracev2...", fg="yellow")
-
-    try:
-        diagnostics = DiagnosticsService(lockdown=service_provider)
-        click.secho("Rebooting device...", fg="yellow")
-        diagnostics.restart()
-        click.secho("Device is rebooting. Waiting for device to reconnect...", fg="yellow")
-    except Exception as e:
-        click.secho(f"Error rebooting device: {e}", fg="red")
-        return None, None
-
-    max_wait_time = 120
-    wait_interval = 2
-    elapsed_time = 0
-
-    while elapsed_time < max_wait_time:
-        time.sleep(wait_interval)
-        elapsed_time += wait_interval
-        try:
-            new_service_provider = create_using_usbmux(serial=udid)
-            click.secho("Device reconnected.", fg="green")
-            click.secho("Please unlock the device if necessary.", fg="yellow")
-            input("Press Enter once the device is unlocked and at the home screen...")
-            click.secho("Getting UUID from tracev2...", fg="green")
-            uuid = get_uuid_from_tracev2_after_reboot(new_service_provider)
-            if uuid:
-                return uuid, new_service_provider
-            else:
-                return None, new_service_provider
-        except Exception:
-            if elapsed_time % 10 == 0:
-                click.secho(f"Waiting for device to reconnect... ({elapsed_time}s)", fg="yellow")
-            continue
-    else:
-        click.secho("Timeout waiting for device to reconnect", fg="red")
-        return None, None
-
-
 def get_lan_ip():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
@@ -357,13 +276,9 @@ async def connection_context(udid):# Create a LockdownClient instance
         if not Path(sd_file).is_file():
             click.secho("Error: StartDisclosureWithTone.m4a file not found", fg="red")
             return
-        
-        uuid, service_provider = reboot_and_get_uuid(service_provider, udid)
-        if not service_provider:
-            click.secho("Error: Could not reconnect to device after reboot", fg="red")
-            return
-        if not uuid:
-            click.secho("Warning: Could not get UUID from tracev2. Will try fallback method in main_callback.", fg="yellow")
+
+        # Không reboot nữa, để main_callback tự lo vụ mở Books và lấy UUID
+        uuid = None
 
         if device_version >= parse_version('17.0'):
             available_address = await create_tunnel(udid)
@@ -372,7 +287,7 @@ async def connection_context(udid):# Create a LockdownClient instance
             else:
                 raise Exception("An error occurred getting tunnels addresses...")
         else:
-            # Use USB Mux
+            # Use USB Mux, không reboot – vào thẳng main_callback, để nó mở Books và lấy UUID
             with DvtSecureSocketProxyService(lockdown=service_provider) as dvt:
                 main_callback(service_provider, dvt, uuid)
     except OSError:  # no route to host (Intel fix)
