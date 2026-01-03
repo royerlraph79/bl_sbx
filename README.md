@@ -12,6 +12,7 @@ This repository contains a proof-of-concept demonstrating how maliciously crafte
   - `/private/var/mobile/Library/FairPlay/`
   - `/private/var/mobile/Media/`
 - Demonstrates modifying `com.apple.MobileGestalt.plist` to validate successful exploitation.
+- Demo for CallRecordNoti modification
 
 ### Outcome
 iOS fails to block crafted download tasks, allowing unauthorized file writes unless the target path requires `root` ownership (or the fileowner is not `mobile`).
